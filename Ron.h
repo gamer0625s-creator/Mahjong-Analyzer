@@ -14,6 +14,7 @@ typedef struct {
     int tsuuiisou;   /* 1 = 字一色 */
     int daisangen;   /* 1 = 大三元 */
     int tanyao;      /* 1 = 斷么九 */
+    int ippeiko;     /* 1 = 一盃口 (門前清限定) */
 } RonResult;
 
 static int ron__first_tile(const int h[TILE_TYPES]) {
@@ -118,6 +119,55 @@ static int ron_check_tanyao(const int all_tiles[TILE_TYPES]) {
     return 1;
 }
 
+/*
+ * 一盃口：門前清，手牌中存在兩組相同的順子。
+ * DFS 枚舉所有面子拆解，若任一拆解中某順子出現 >= 2 次即成立。
+ */
+static void ron__ippeiko_rec(int h[TILE_TYPES], int idx,
+                              int chi[TILE_TYPES], int* found) {
+    if (*found) return;
+    while (idx < TILE_TYPES && h[idx] == 0) idx++;
+    if (idx >= TILE_TYPES) {
+        for (int i = 0; i < TILE_TYPES; i++)
+            if (chi[i] >= 2) { *found = 1; return; }
+        return;
+    }
+    int suit = idx / 9;
+    /* 嘗試刻子 */
+    if (h[idx] >= 3) {
+        h[idx] -= 3;
+        ron__ippeiko_rec(h, idx, chi, found);
+        h[idx] += 3;
+        if (*found) return;
+    }
+    /* 嘗試順子 */
+    if (suit < 3 && idx + 2 < suit * 9 + 9 && h[idx+1] > 0 && h[idx+2] > 0) {
+        h[idx]--; h[idx+1]--; h[idx+2]--;
+        chi[idx]++;
+        ron__ippeiko_rec(h, idx, chi, found);
+        chi[idx]--;
+        h[idx]++; h[idx+1]++; h[idx+2]++;
+        if (*found) return;
+    }
+}
+
+static int ron_check_ippeiko(const PlayerHand* ph) {
+    if (ph->num_melds != 0) return 0; /* 需門前清 */
+    int h[TILE_TYPES];
+    memcpy(h, ph->closed_hand, sizeof(int) * TILE_TYPES);
+
+    for (int p = 0; p < TILE_TYPES; p++) {
+        if (h[p] < 2) continue;
+        h[p] -= 2;
+        int chi[TILE_TYPES] = {0};
+        int found = 0;
+        ron__ippeiko_rec(h, 0, chi, &found);
+        h[p] += 2;
+        if (found) return 1;
+    }
+    return 0;
+}
+
 /* 主入口 */
 static int ron_check(const PlayerHand* ph, RonResult* result) {
     int is_menzen = 1;
@@ -136,6 +186,7 @@ static int ron_check(const PlayerHand* ph, RonResult* result) {
     int tsuuiisou = (normal || chiitoitsu) ? ron_check_tsuuiisou(all_tiles) : 0;
     int daisangen = normal ? ron_check_daisangen(all_tiles) : 0;
     int tanyao = normal ? ron_check_tanyao(all_tiles) : 0;
+    int ippeiko = (normal && is_menzen) ? ron_check_ippeiko(ph) : 0;
 
     if (result) {
         result->normal = normal;
@@ -145,6 +196,7 @@ static int ron_check(const PlayerHand* ph, RonResult* result) {
         result->tsuuiisou = tsuuiisou;
         result->daisangen = daisangen;
         result->tanyao = tanyao;
+        result->ippeiko = ippeiko;
     }
     return (normal || chiitoitsu || kokushi);
 }

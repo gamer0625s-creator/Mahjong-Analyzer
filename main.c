@@ -10,6 +10,7 @@
 #include "Ron.h"
 #include "Tenpai.h"
 #include "Wall.h"
+#include "ScoreCalc.h"
 
 /* ══════════════════════════════════════════
    Utility functions
@@ -201,6 +202,21 @@ int main(void) {
     print_hand(&ph);
     printf("-------------------------------------------\n");
 
+    /* ── 場風/自風/寶牌 ── */
+    int round_wind = 0, seat_wind = 0;
+    int dora_indicators[TILE_TYPES] = {0};
+    {
+        char wline[256];
+        printf("Round wind (0=East 1=South 2=West 3=North) [default 0]: ");
+        fflush(stdout);
+        if (fgets(wline, sizeof(wline), stdin)) round_wind = (wline[0]>='0'&&wline[0]<='3') ? wline[0]-'0' : 0;
+        printf("Seat  wind (0=East 1=South 2=West 3=North) [default 0]: ");
+        fflush(stdout);
+        if (fgets(wline, sizeof(wline), stdin)) seat_wind  = (wline[0]>='0'&&wline[0]<='3') ? wline[0]-'0' : 0;
+        read_seen_line("Dora indicator tile(s) (e.g. 9s 2p, Enter to skip): ", dora_indicators);
+    }
+    printf("-------------------------------------------\n");
+
     /* ── Win check ── */
     RonResult result;
     int can_win = ron_check(&ph, &result);
@@ -209,11 +225,36 @@ int main(void) {
         printf("** Winning hand! **\n");
         if (result.normal)     printf("   - Standard win (4 melds + 1 pair)\n");
         if (result.tanyao)     printf("       + Tanyao (All Simples)\n");
+        if (result.ippeiko)    printf("       + Ippeiko (Pure Double Sequence)\n");
         if (result.chiitoitsu) printf("   - Chiitoitsu (Seven Pairs)\n");
         if (result.kokushi)    printf("   - Kokushi Musou (Thirteen Orphans)\n");
         if (result.ryuuiisou)  printf("   - Ryuu Iisou (All Green)\n");
         if (result.tsuuiisou)  printf("   - Tsuuiisou (All Honors)\n");
         if (result.daisangen)  printf("   - Daisangen (Big Three Dragons)\n");
+
+        /* ── 符/番計算（詢問榮和/自摸與和牌） */
+        int is_tsumo = 0;
+        {
+            char wline[64];
+            printf("Tsumo or Ron? (t=Tsumo r=Ron) [default r]: ");
+            fflush(stdout);
+            if (fgets(wline, sizeof(wline), stdin))
+                is_tsumo = (wline[0]=='t' || wline[0]=='T') ? 1 : 0;
+        }
+        int win_tile = -1;
+        {
+            char wline[64];
+            printf("Winning tile (e.g. 3m), or Enter to skip: ");
+            fflush(stdout);
+            if (fgets(wline, sizeof(wline), stdin) && wline[0] != '\n')
+                win_tile = parse_tile(wline);
+        }
+
+        ScoreResult sr;
+        score_calc(&ph, &result, win_tile, is_tsumo, round_wind, seat_wind, dora_indicators, &sr);
+        printf("-------------------------------------------\n");
+        printf("Score:\n");
+        score_print(&sr);
         printf("===========================================\n");
         return 0;
     }
@@ -299,11 +340,26 @@ int main(void) {
                 RonResult wr;
                 ron_check(&h14, &wr);
 
-                char note[64] = "";
-                if (wr.tanyao) strncat(note, ", Tanyao", sizeof(note) - strlen(note) - 1);
+                /* 計算榮和符/番 */
+                ScoreResult sr_ron, sr_tsumo;
+                score_calc(&h14, &wr, tile, 0, round_wind, seat_wind, dora_indicators, &sr_ron);
+                score_calc(&h14, &wr, tile, 1, round_wind, seat_wind, dora_indicators, &sr_tsumo);
 
-                printf("%s (%d left%s)", tile_name(tile), rem, note);
-                if (j < opt->n_waits - 1) printf(", ");
+                char note[128] = "";
+                if (wr.tanyao)  strncat(note, " Tanyao", sizeof(note)-strlen(note)-1);
+                if (wr.ippeiko) strncat(note, " Ippeiko", sizeof(note)-strlen(note)-1);
+
+                if (sr_ron.is_yakuman) {
+                    printf("%s (%d left) [YAKUMAN: %s]",
+                           tile_name(tile), rem, sr_ron.yakuman_name);
+                } else {
+                    printf("%s (%d left) [Ron:%d fu, %d han / Tsumo:%d fu, %d han %s]",
+                           tile_name(tile), rem,
+                           sr_ron.fu, sr_ron.han,
+                           sr_tsumo.fu, sr_tsumo.han,
+                           note);
+                }
+                if (j < opt->n_waits - 1) printf(",\n          ");
             }
             printf("  [total: %d]\n", opt->total_remaining);
         }
