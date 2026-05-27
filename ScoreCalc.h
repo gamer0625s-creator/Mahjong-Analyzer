@@ -661,9 +661,9 @@ static void sc__calc_basic_pts(ScoreResult* s) {
         /* 一般計算：fu × 2^(han+2) */
         int pts = fu;
         for (int i = 0; i < han + 2; i++) pts *= 2;
-
+        pts *= 4;
         /* 滿貫判定：超過 7700 或符合特定組合 */
-        int is_mangan = (pts > 7700)
+        int is_mangan = (pts > 7900)
             || (han == 5)
             || (han == 4 && fu >= 30)
             || (han == 3 && fu >= 70);
@@ -694,7 +694,7 @@ static void score_print(const ScoreResult* s) {
     if (s->limit_name[0]) printf("  (%s)", s->limit_name);
     printf("\n");
     printf("   Basic pts: %d (dealer: %d)\n",
-           (s->basic_pts) * 4, (s->dealer_basic_pts) * 4);
+           (s->basic_pts) , (s->dealer_basic_pts) );
     for (int i = 0; i < s->n_yaku; i++)
         printf("       + %s (%d han)\n", s->yaku[i].name, s->yaku[i].han);
 }
