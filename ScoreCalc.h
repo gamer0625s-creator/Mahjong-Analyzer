@@ -661,7 +661,7 @@ static void sc__calc_basic_pts(ScoreResult* s) {
         /* 一般計算：fu × 2^(han+2) */
         int pts = fu;
         for (int i = 0; i < han + 2; i++) pts *= 2;
-        pts *= 4;
+      
         /* 滿貫判定：超過 7700 或符合特定組合 */
         int is_mangan = (pts > 7900)
             || (han == 5)
