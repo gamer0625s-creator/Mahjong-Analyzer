@@ -485,25 +485,16 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
 
         /* ── 符計算 ── */
         int fu = 20; /* 符底 */
-        if(DEBUG)printf("Start %dfu\n",fu);
         /* 門前清榮和 */
         if (is_menzen && !is_tsumo) fu += 10;
-
-        if(DEBUG)printf("pin tsumo Bug %dfu\n",fu);
-
         /* 自摸（平和自摸不加自摸符） */
         int pinfu = sc__is_pinfu(d, ph, win_tile, round_wind, seat_wind);
         if (is_tsumo && !pinfu) fu += 2;
-
-        if(DEBUG)printf("tsumo Bug %dfu\n",fu);
-
         /* 聽牌符 */
         if (win_tile >= 0 && !pinfu)
             fu += sc__wait_fu(d, ph->melds, ph->num_melds, win_tile);
-            if(DEBUG)printf("sc__wait_fu Bug %dfu\n",fu);
         /* 雀頭符 */
         fu += sc__pair_fu(d->pair_tile, round_wind, seat_wind);
-        if(DEBUG)printf("PAIR Bug %dfu\n",fu);
         /* 手牌面子符 */
         for (int m = 0; m < d->n_mentsu; m++) {
             int t = d->mentsu_tile[m];
@@ -511,23 +502,22 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
                 /* 順子 0符 */
             } else {
                 fu += sc__ankou_fu(t);
-                if(DEBUG)printf("mentsu Bug %dfu\n",fu);
             }
         }
         /* 副露面子符 */
         for (int i = 0; i < ph->num_melds; i++) {
             int t = ph->melds[i].tiles[0];
             fu += sc__meld_fu(ph->melds[i].type, t, 0);
-            if(DEBUG)printf("sc__meld_fu Bug %dfu\n",fu);
+            
         }
 
         /* 平和自摸固定20符（不進位另加） */
         if (pinfu && is_tsumo) fu = 20;
-        if(DEBUG)printf("pinfu && is_tsumo Bug %dfu\n",fu);
+       
         /* 進位到10倍數（非平和自摸的情況） */
         if (!(pinfu && is_tsumo)) {
             fu = ((fu + 9) / 10) * 10;
-            if(DEBUG)printf("10times Bug %dfu\n",fu);
+         
         }
         
         /* ── 番計算 ── */
