@@ -85,10 +85,10 @@ static int sc__meld_fu(MeldType type, int tile, int is_open_pon_from_closed) {
     /* 是否么九 */  
     int yao = sc__is_yaochuuhai(tile);
     switch (type) {
-        case MELD_CHI:       if(DEBUG)printf("CHI Bug\n");return 0;
-        case MELD_PON:       if(DEBUG)printf("PON Bug\n");return yao ? 4 : 2;   /* 明刻 */
-        case MELD_KAN_OPEN:  if(DEBUG)printf("KAN Bug\n");return yao ? 16 : 8;  /* 明槓 */
-        case MELD_KAN_CLOSED:if(DEBUG)printf("ANKAN Bug\n");return yao ? 32 : 16;  /* 暗槓 */
+        case MELD_CHI:       return 0;
+        case MELD_PON:       return yao ? 4 : 2;   /* 明刻 */
+        case MELD_KAN_OPEN:  return yao ? 16 : 8;  /* 明槓 */
+        case MELD_KAN_CLOSED:return yao ? 32 : 16;  /* 暗槓 */
         default:             return 0;
     }
     (void)is_open_pon_from_closed;
@@ -606,7 +606,8 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
         int dora_han = sc__count_dora(all_tiles, dora_indicators);
         if (dora_han > 0) {
             ScYaku* y = &out->yaku[out->n_yaku++];
-            sprintf(y->name, "Dora (%d han)", dora_han); y->han = dora_han;
+            sprintf(y->name, "Dora "); 
+            y->han = dora_han;
             out->han += dora_han;
         }
     }
