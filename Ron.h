@@ -15,6 +15,7 @@ typedef struct {
     int daisangen;   /* 1 = 大三元 */
     int tanyao;      /* 1 = 斷么九 */
     int ippeiko;     /* 1 = 一盃口 (門前清限定) */
+    int riichi;      /* 1 = 立直 (門前清限定，由外部輸入設定) */
 } RonResult;
 
 static int ron__first_tile(const int h[TILE_TYPES]) {
@@ -48,11 +49,28 @@ static int ron__can_form_melds(int h[TILE_TYPES], int tiles_left) {
     return 0;
 }
 
-/* 傳入固定面子數，只需湊滿 (4 - num_melds) 個面子 */
+/* 傳入固定面子數，只需湊滿剩餘面子數個面子
+   注意：MELD_ANKOU 的牌仍存在 closed_hand，需先扣除再計算 */
 static int ron_check_normal(const PlayerHand* ph) {
     int h[TILE_TYPES];
     memcpy(h, ph->closed_hand, sizeof(int) * TILE_TYPES);
-    int target_tiles = (4 - ph->num_melds) * 3;
+
+    /* 計算真正需要從 closed_hand 組出幾個面子（已確定的副露不計） */
+    int fixed_melds = 0;
+    for (int i = 0; i < ph->num_melds; i++) {
+        MeldType t = ph->melds[i].type;
+        if (t == MELD_ANKOU) {
+            /* 暗刻的牌在 closed_hand，先扣除再當成已完成面子 */
+            int tile = ph->melds[i].tiles[0];
+            h[tile] -= 3;
+            if (h[tile] < 0) return 0; /* 資料有誤 */
+            fixed_melds++;
+        } else {
+            /* 碰/吃/槓：牌不在 closed_hand，直接算完成面子 */
+            fixed_melds++;
+        }
+    }
+    int target_tiles = (4 - fixed_melds) * 3;
 
     for (int i = 0; i < TILE_TYPES; i++) {
         if (h[i] >= 2) {
@@ -152,7 +170,11 @@ static void ron__ippeiko_rec(int h[TILE_TYPES], int idx,
 }
 
 static int ron_check_ippeiko(const PlayerHand* ph) {
-    if (ph->num_melds != 0) return 0; /* 需門前清 */
+    /* 需門前清：不能有碰/吃/明槓 */
+    for (int i = 0; i < ph->num_melds; i++) {
+        MeldType t = ph->melds[i].type;
+        if (t == MELD_PON || t == MELD_CHI || t == MELD_KAN_OPEN) return 0;
+    }
     int h[TILE_TYPES];
     memcpy(h, ph->closed_hand, sizeof(int) * TILE_TYPES);
 
@@ -170,14 +192,20 @@ static int ron_check_ippeiko(const PlayerHand* ph) {
 
 /* 主入口 */
 static int ron_check(const PlayerHand* ph, RonResult* result) {
+    /* 門前清：只允許暗刻(ANKOU)和暗槓(KAN_CLOSED)，碰/吃/明槓則非門前清 */
     int is_menzen = 1;
+    int has_open = 0;
     for (int i = 0; i < ph->num_melds; i++) {
-        if (ph->melds[i].type != MELD_KAN_CLOSED) { is_menzen = 0; break; }
+        MeldType t = ph->melds[i].type;
+        if (t == MELD_PON || t == MELD_CHI || t == MELD_KAN_OPEN) {
+            is_menzen = 0; has_open = 1; break;
+        }
     }
 
     int normal = ron_check_normal(ph);
+    /* 七對子/國士：不能有副露（暗刻/暗槓也視為已確定面子，不符七對子） */
     int chiitoitsu = (ph->num_melds == 0) ? ron_check_chiitoitsu(ph->closed_hand) : 0;
-    int kokushi = (ph->num_melds == 0) ? ron_check_kokushi(ph->closed_hand) : 0;
+    int kokushi    = (ph->num_melds == 0) ? ron_check_kokushi(ph->closed_hand) : 0;
 
     int all_tiles[TILE_TYPES] = { 0 };
     playerhand_get_all_tiles(ph, all_tiles);
@@ -197,7 +225,9 @@ static int ron_check(const PlayerHand* ph, RonResult* result) {
         result->daisangen = daisangen;
         result->tanyao = tanyao;
         result->ippeiko = ippeiko;
+        result->riichi = 0;   /* 由外部（main）在詢問玩家後設定 */
     }
+    (void)has_open;
     return (normal || chiitoitsu || kokushi);
 }
 #endif

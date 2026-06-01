@@ -85,10 +85,10 @@ static int sc__meld_fu(MeldType type, int tile, int is_open_pon_from_closed) {
     /* 是否么九 */  
     int yao = sc__is_yaochuuhai(tile);
     switch (type) {
-        case MELD_CHI:       return 0;
-        case MELD_PON:       return yao ? 4 : 2;   /* 明刻 */
-        case MELD_KAN_OPEN:  return yao ? 16 : 8;  /* 明槓 */
-        case MELD_KAN_CLOSED:return yao ? 32 : 16;  /* 暗槓 */
+        case MELD_CHI:       if(DEBUG)printf("CHI Bug\n");return 0;
+        case MELD_PON:       if(DEBUG)printf("PON Bug\n");return yao ? 4 : 2;   /* 明刻 */
+        case MELD_KAN_OPEN:  if(DEBUG)printf("KAN Bug\n");return yao ? 16 : 8;  /* 明槓 */
+        case MELD_KAN_CLOSED:if(DEBUG)printf("ANKAN Bug\n");return yao ? 32 : 16;  /* 暗槓 */
         default:             return 0;
     }
     (void)is_open_pon_from_closed;
@@ -411,11 +411,13 @@ static int sc__count_dora(const int all_tiles[TILE_TYPES],
    round_wind      : 0=東, 1=南, 2=西, 3=北
    seat_wind       : 0=東, 1=南, 2=西, 3=北
    dora_indicators : 各牌作為指示牌的張數（NULL = 不算寶牌）
+   riichi          : 1=立直（由外部傳入，門前清時有效）
 ══════════════════════════════════════════════════════════════ */
 static void score_calc(const PlayerHand* ph, const RonResult* ron,
                         int win_tile, int is_tsumo,
                         int round_wind, int seat_wind,
                         const int dora_indicators[TILE_TYPES],
+                        int riichi,
                         ScoreResult* out) {
     memset(out, 0, sizeof(ScoreResult));
 
@@ -457,6 +459,12 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
         out->fu = 25; out->han = 2;
         ScYaku* y = &out->yaku[out->n_yaku++];
         strcpy(y->name, "Chiitoitsu (Seven Pairs)"); y->han = 2;
+        /* 立直（七對子為門前清，可立直） */
+        if (riichi && is_menzen) {
+            ScYaku* yr = &out->yaku[out->n_yaku++];
+            strcpy(yr->name, "Riichi"); yr->han = 1;
+            out->han += 1;
+        }
         /* 寶牌 */
         if (dora_indicators) {
             int dora_han = sc__count_dora(all_tiles, dora_indicators);
@@ -485,16 +493,25 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
 
         /* ── 符計算 ── */
         int fu = 20; /* 符底 */
+        if(DEBUG)printf("Start %dfu\n",fu);
         /* 門前清榮和 */
         if (is_menzen && !is_tsumo) fu += 10;
+
+        if(DEBUG)printf("pin tsumo Bug %dfu\n",fu);
+
         /* 自摸（平和自摸不加自摸符） */
         int pinfu = sc__is_pinfu(d, ph, win_tile, round_wind, seat_wind);
         if (is_tsumo && !pinfu) fu += 2;
+
+        if(DEBUG)printf("tsumo Bug %dfu\n",fu);
+
         /* 聽牌符 */
         if (win_tile >= 0 && !pinfu)
             fu += sc__wait_fu(d, ph->melds, ph->num_melds, win_tile);
+            if(DEBUG)printf("sc__wait_fu Bug %dfu\n",fu);
         /* 雀頭符 */
         fu += sc__pair_fu(d->pair_tile, round_wind, seat_wind);
+        if(DEBUG)printf("PAIR Bug %dfu\n",fu);
         /* 手牌面子符 */
         for (int m = 0; m < d->n_mentsu; m++) {
             int t = d->mentsu_tile[m];
@@ -502,22 +519,23 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
                 /* 順子 0符 */
             } else {
                 fu += sc__ankou_fu(t);
+                if(DEBUG)printf("mentsu Bug %dfu\n",fu);
             }
         }
         /* 副露面子符 */
         for (int i = 0; i < ph->num_melds; i++) {
             int t = ph->melds[i].tiles[0];
             fu += sc__meld_fu(ph->melds[i].type, t, 0);
-            
+            if(DEBUG)printf("sc__meld_fu Bug %dfu\n",fu);
         }
 
         /* 平和自摸固定20符（不進位另加） */
         if (pinfu && is_tsumo) fu = 20;
-       
+        if(DEBUG)printf("pinfu && is_tsumo Bug %dfu\n",fu);
         /* 進位到10倍數（非平和自摸的情況） */
         if (!(pinfu && is_tsumo)) {
             fu = ((fu + 9) / 10) * 10;
-         
+            if(DEBUG)printf("10times Bug %dfu\n",fu);
         }
         
         /* ── 番計算 ── */
@@ -569,6 +587,13 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
     /* ── 填入役種清單（用最佳 decomp） ── */
     ScDecomp* bd = &dl.decomps[best_decomp_idx];
 
+    /* 立直：門前清限定，1番 */
+    if (riichi && is_menzen) {
+        ScYaku* y = &out->yaku[out->n_yaku++];
+        strcpy(y->name, "Riichi"); y->han = 1;
+        out->han += 1;
+    }
+
     int pinfu_f = sc__is_pinfu(bd, ph, win_tile, round_wind, seat_wind);
     if (pinfu_f) { ScYaku* y=&out->yaku[out->n_yaku++]; strcpy(y->name,"Pinfu"); y->han=1; }
     if (ron->tanyao) { ScYaku* y=&out->yaku[out->n_yaku++]; strcpy(y->name,"Tanyao (All Simples)"); y->han=1; }
@@ -606,8 +631,7 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
         int dora_han = sc__count_dora(all_tiles, dora_indicators);
         if (dora_han > 0) {
             ScYaku* y = &out->yaku[out->n_yaku++];
-            sprintf(y->name, "Dora "); 
-            y->han = dora_han;
+            sprintf(y->name, "Dora (%d han)", dora_han); y->han = dora_han;
             out->han += dora_han;
         }
     }
@@ -652,9 +676,9 @@ static void sc__calc_basic_pts(ScoreResult* s) {
         /* 一般計算：fu × 2^(han+2) */
         int pts = fu;
         for (int i = 0; i < han + 2; i++) pts *= 2;
-      
+
         /* 滿貫判定：超過 7700 或符合特定組合 */
-        int is_mangan = (pts > 7900)
+        int is_mangan = (pts > 7700)
             || (han == 5)
             || (han == 4 && fu >= 30)
             || (han == 3 && fu >= 70);
@@ -685,7 +709,7 @@ static void score_print(const ScoreResult* s) {
     if (s->limit_name[0]) printf("  (%s)", s->limit_name);
     printf("\n");
     printf("   Basic pts: %d (dealer: %d)\n",
-           (s->basic_pts) , (s->dealer_basic_pts) );
+           s->basic_pts, s->dealer_basic_pts);
     for (int i = 0; i < s->n_yaku; i++)
         printf("       + %s (%d han)\n", s->yaku[i].name, s->yaku[i].han);
 }

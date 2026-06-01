@@ -16,7 +16,8 @@ typedef enum {
     MELD_CHI,         /* 順子 (吃) */
     MELD_PON,         /* 刻子 (碰) */
     MELD_KAN_OPEN,    /* 明槓 (大明槓/加槓) */
-    MELD_KAN_CLOSED   /* 暗槓 */
+    MELD_KAN_CLOSED,  /* 暗槓 */
+    MELD_ANKOU        /* 暗刻 (手牌中的刻子，輸入用 a prefix) */
 } MeldType;
 
 /* 紀錄單一組副露 */

@@ -43,12 +43,18 @@ static int parse_tile(const char* token) {
     return -1;
 }
 
-/* 解析副露格式 (例如 p5p, c234m, k1z, a1z) */
+/* 解析副露格式
+   c234m  = Chi (吃)
+   p5p    = Pon (碰，明刻)
+   k1z    = Minkan (明槓)
+   q1z    = Ankan (暗槓)
+   暗刻直接輸入三張牌即可，例如：1z 1z 1z
+*/
 static int parse_meld(const char* token, PlayerHand* ph) {
     if (ph->num_melds >= 4) return 0;
 
     char type = (char)tolower((unsigned char)token[0]);
-    if (type != 'p' && type != 'c' && type != 'k' && type != 'a') return 0;
+    if (type != 'p' && type != 'c' && type != 'k' && type != 'q') return 0;
 
     Meld m;
     m.tiles[0] = m.tiles[1] = m.tiles[2] = m.tiles[3] = -1;
@@ -59,10 +65,16 @@ static int parse_meld(const char* token, PlayerHand* ph) {
         m.type = MELD_PON;
         m.tiles[0] = m.tiles[1] = m.tiles[2] = idx;
     }
-    else if (type == 'k' || type == 'a') {
+    else if (type == 'k') {
         int idx = parse_tile(token + 1);
         if (idx < 0) return 0;
-        m.type = (type == 'a') ? MELD_KAN_CLOSED : MELD_KAN_OPEN;
+        m.type = MELD_KAN_OPEN;
+        m.tiles[0] = m.tiles[1] = m.tiles[2] = m.tiles[3] = idx;
+    }
+    else if (type == 'q') {
+        int idx = parse_tile(token + 1);
+        if (idx < 0) return 0;
+        m.type = MELD_KAN_CLOSED;
         m.tiles[0] = m.tiles[1] = m.tiles[2] = m.tiles[3] = idx;
     }
     else if (type == 'c') {
@@ -167,7 +179,8 @@ int main(void) {
     printf("   Japanese Mahjong Hand Analyzer\n");
     printf("===========================================\n");
     printf("Format: Normal tiles (e.g. 3m, 7p, 1z)\n");
-    printf("Melds: c234m (Chi), p5p (Pon), k1z (Minkan), a1z (Ankan)\n");
+    printf("Melds: c234m (Chi), p5p (Pon/明刻), k1z (Minkan/明槓), q1z (Ankan/暗槓)\n");
+    printf("Note: Ankou (暗刻) just enter 3 identical tiles, e.g. 1z 1z 1z\n");
     printf("Example hand: 1m 2m 3m p4m 5p 6p 7p 1s 1s 1s 7z 7z\n");
     printf("-------------------------------------------\n");
     printf("Enter your hand (Space-separated):\n");
@@ -181,7 +194,7 @@ int main(void) {
             if (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
                 if (pos > 0) {
                     token[pos] = '\0';
-                    if (token[0] == 'p' || token[0] == 'c' || token[0] == 'k' || token[0] == 'a') {
+                    if (token[0] == 'p' || token[0] == 'c' || token[0] == 'k' || token[0] == 'q') {
                         parse_meld(token, &ph);
                     }
                     else {
@@ -202,9 +215,10 @@ int main(void) {
     print_hand(&ph);
     printf("-------------------------------------------\n");
 
-    /* ── 場風/自風/寶牌 ── */
+    /* ── 場風/自風/立直 ── */
     int round_wind = 0, seat_wind = 0;
     int dora_indicators[TILE_TYPES] = {0};
+    int riichi = 0;
     {
         char wline[256];
         printf("Round wind (0=East 1=South 2=West 3=North) [default 0]: ");
@@ -214,6 +228,18 @@ int main(void) {
         fflush(stdout);
         if (fgets(wline, sizeof(wline), stdin)) seat_wind  = (wline[0]>='0'&&wline[0]<='3') ? wline[0]-'0' : 0;
         read_seen_line("Dora indicator tile(s) (e.g. 9s 2p, Enter to skip): ", dora_indicators);
+
+        /* 判斷門前清：無副露，或副露全為暗槓 */
+        int is_menzen = 1;
+        for (int i = 0; i < ph.num_melds; i++)
+            if (ph.melds[i].type != MELD_KAN_CLOSED) { is_menzen = 0; break; }
+
+        if (is_menzen) {
+            printf("Riichi? (y/n) [default n]: ");
+            fflush(stdout);
+            if (fgets(wline, sizeof(wline), stdin))
+                riichi = (wline[0] == 'y' || wline[0] == 'Y') ? 1 : 0;
+        }
     }
     printf("-------------------------------------------\n");
 
@@ -251,7 +277,8 @@ int main(void) {
         }
 
         ScoreResult sr;
-        score_calc(&ph, &result, win_tile, is_tsumo, round_wind, seat_wind, dora_indicators, &sr);
+        result.riichi = riichi;
+        score_calc(&ph, &result, win_tile, is_tsumo, round_wind, seat_wind, dora_indicators, riichi, &sr);
         printf("-------------------------------------------\n");
         printf("Score:\n");
         score_print(&sr);
@@ -264,11 +291,10 @@ int main(void) {
     printf("   Live Wall Setup\n");
     printf("===========================================\n");
 
-    int seen_dora[TILE_TYPES] = { 0 }, seen_left[TILE_TYPES] = { 0 };
+    int seen_left[TILE_TYPES] = { 0 };
     int seen_opp[TILE_TYPES] = { 0 }, seen_right[TILE_TYPES] = { 0 };
     int own_discards[TILE_TYPES] = { 0 };
 
-    read_seen_line("Dora indicator tile(s)      : ", seen_dora);
     read_seen_line("Kamicha (left)  discards    : ", seen_left);
     read_seen_line("Toimen  (across) discards   : ", seen_opp);
     read_seen_line("Shimocha (right) discards   : ", seen_right);
@@ -277,7 +303,8 @@ int main(void) {
 
     int seen_all[TILE_TYPES] = { 0 };
     for (int i = 0; i < TILE_TYPES; i++) {
-        seen_all[i] = seen_dora[i] + seen_left[i] + seen_opp[i] + seen_right[i] + own_discards[i];
+        /* 寶牌指示牌已在前面輸入，一併從牌山扣除 */
+        seen_all[i] = dora_indicators[i] + seen_left[i] + seen_opp[i] + seen_right[i] + own_discards[i];
     }
 
     /* 將玩家包含副露在內的所有牌傳給 Wall 拔除 */
@@ -342,8 +369,8 @@ int main(void) {
 
                 /* 計算榮和符/番 */
                 ScoreResult sr_ron, sr_tsumo;
-                score_calc(&h14, &wr, tile, 0, round_wind, seat_wind, dora_indicators, &sr_ron);
-                score_calc(&h14, &wr, tile, 1, round_wind, seat_wind, dora_indicators, &sr_tsumo);
+                score_calc(&h14, &wr, tile, 0, round_wind, seat_wind, dora_indicators, riichi, &sr_ron);
+                score_calc(&h14, &wr, tile, 1, round_wind, seat_wind, dora_indicators, riichi, &sr_tsumo);
 
                 char note[128] = "";
                 if (wr.tanyao)  strncat(note, " Tanyao", sizeof(note)-strlen(note)-1);
@@ -353,7 +380,7 @@ int main(void) {
                     printf("%s (%d left) [YAKUMAN: %s]",
                            tile_name(tile), rem, sr_ron.yakuman_name);
                 } else {
-                    printf("%s (%d left) [Ron:%d fu, %d han / Tsumo:%d fu, %d han %s]",
+                    printf("%s (%d left) [Ron:%dfu%dhan / Tsumo:%dfu%dhan%s]",
                            tile_name(tile), rem,
                            sr_ron.fu, sr_ron.han,
                            sr_tsumo.fu, sr_tsumo.han,
