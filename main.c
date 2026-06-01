@@ -179,8 +179,8 @@ int main(void) {
     printf("   Japanese Mahjong Hand Analyzer\n");
     printf("===========================================\n");
     printf("Format: Normal tiles (e.g. 3m, 7p, 1z)\n");
-    printf("Melds: c234m (Chi), p5p (Pon/明刻), k1z (Minkan/明槓), q1z (Ankan/暗槓)\n");
-    printf("Note: Ankou (暗刻) just enter 3 identical tiles, e.g. 1z 1z 1z\n");
+    printf("Melds: c234m (Chi), p5p (Pon), k1z (Minkan), q1z (Ankan\n");
+    printf("Note: Ankou just enter 3 identical tiles, e.g. 1z 1z 1z\n");
     printf("Example hand: 1m 2m 3m p4m 5p 6p 7p 1s 1s 1s 7z 7z\n");
     printf("-------------------------------------------\n");
     printf("Enter your hand (Space-separated):\n");
