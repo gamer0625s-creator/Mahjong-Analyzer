@@ -85,10 +85,10 @@ static int sc__meld_fu(MeldType type, int tile, int is_open_pon_from_closed) {
     /* 是否么九 */  
     int yao = sc__is_yaochuuhai(tile);
     switch (type) {
-        case MELD_CHI:       if(DEBUG)printf("CHI Bug\n");return 0;
-        case MELD_PON:       if(DEBUG)printf("PON Bug\n");return yao ? 4 : 2;   /* 明刻 */
-        case MELD_KAN_OPEN:  if(DEBUG)printf("KAN Bug\n");return yao ? 16 : 8;  /* 明槓 */
-        case MELD_KAN_CLOSED:if(DEBUG)printf("ANKAN Bug\n");return yao ? 32 : 16;  /* 暗槓 */
+        case MELD_CHI:       return 0;
+        case MELD_PON:       return yao ? 4 : 2;   /* 明刻 */
+        case MELD_KAN_OPEN:  return yao ? 16 : 8;  /* 明槓 */
+        case MELD_KAN_CLOSED:return yao ? 32 : 16;  /* 暗槓 */
         default:             return 0;
     }
     (void)is_open_pon_from_closed;
@@ -96,7 +96,6 @@ static int sc__meld_fu(MeldType type, int tile, int is_open_pon_from_closed) {
 
 /* 暗刻加符（手牌中的刻子） */
 static int sc__ankou_fu(int tile) {
-    if(DEBUG)printf("ANPON Bug \n");
     return sc__is_yaochuuhai(tile) ? 8 : 4;   /* 暗刻 */ 
 }
 
@@ -361,9 +360,11 @@ typedef struct {
     ScYaku yaku[SC_YAKU_MAX];
     int  n_yaku;
     char yakuman_name[64];/* 役滿名稱 */
-    int  basic_pts;       /* 閒家基本點 (符 × 2^(番+2)，上限8000) */
-    int  dealer_basic_pts;/* 莊家基本點 = 閒家基本點 × 1.5，上限12000 */
+    int  basic_pts;       /* 閒家基本點（進位到100，上限8000） */
+    int  dealer_basic_pts;/* 莊家基本點（進位到100，上限12000） */
     char limit_name[20];  /* 滿貫等級名稱，無則為空字串 */
+    int  is_tsumo;        /* 1=自摸, 0=榮和（由 score_calc 填入） */
+    int  is_dealer;       /* 1=莊家, 0=閒家（由 score_calc 填入） */
 } ScoreResult;
 
 /* 前置宣告（定義在 score_calc 之後） */
@@ -420,6 +421,9 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
                         int riichi,
                         ScoreResult* out) {
     memset(out, 0, sizeof(ScoreResult));
+
+    out->is_tsumo  = is_tsumo;
+    out->is_dealer = (seat_wind == 0);  /* 東家為莊 */
 
     int all_tiles[TILE_TYPES] = {0};
     playerhand_get_all_tiles(ph, all_tiles);
@@ -493,25 +497,18 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
 
         /* ── 符計算 ── */
         int fu = 20; /* 符底 */
-        if(DEBUG)printf("Start %dfu\n",fu);
         /* 門前清榮和 */
         if (is_menzen && !is_tsumo) fu += 10;
-
-        if(DEBUG)printf("pin tsumo Bug %dfu\n",fu);
 
         /* 自摸（平和自摸不加自摸符） */
         int pinfu = sc__is_pinfu(d, ph, win_tile, round_wind, seat_wind);
         if (is_tsumo && !pinfu) fu += 2;
 
-        if(DEBUG)printf("tsumo Bug %dfu\n",fu);
-
         /* 聽牌符 */
         if (win_tile >= 0 && !pinfu)
             fu += sc__wait_fu(d, ph->melds, ph->num_melds, win_tile);
-            if(DEBUG)printf("sc__wait_fu Bug %dfu\n",fu);
         /* 雀頭符 */
         fu += sc__pair_fu(d->pair_tile, round_wind, seat_wind);
-        if(DEBUG)printf("PAIR Bug %dfu\n",fu);
         /* 手牌面子符 */
         for (int m = 0; m < d->n_mentsu; m++) {
             int t = d->mentsu_tile[m];
@@ -519,23 +516,20 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
                 /* 順子 0符 */
             } else {
                 fu += sc__ankou_fu(t);
-                if(DEBUG)printf("mentsu Bug %dfu\n",fu);
             }
         }
         /* 副露面子符 */
         for (int i = 0; i < ph->num_melds; i++) {
             int t = ph->melds[i].tiles[0];
             fu += sc__meld_fu(ph->melds[i].type, t, 0);
-            if(DEBUG)printf("sc__meld_fu Bug %dfu\n",fu);
         }
 
         /* 平和自摸固定20符（不進位另加） */
         if (pinfu && is_tsumo) fu = 20;
-        if(DEBUG)printf("pinfu && is_tsumo Bug %dfu\n",fu);
+    
         /* 進位到10倍數（非平和自摸的情況） */
         if (!(pinfu && is_tsumo)) {
             fu = ((fu + 9) / 10) * 10;
-            if(DEBUG)printf("10times Bug %dfu\n",fu);
         }
         
         /* ── 番計算 ── */
@@ -640,78 +634,119 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
 }
 
 /* ══════════════════════════════════════════════════════════════
+   輔助：無條件進位到 100 的倍數
+══════════════════════════════════════════════════════════════ */
+static int sc__ceil100(int v) {
+    return ((v + 99) / 100) * 100;
+}
+
+/* ══════════════════════════════════════════════════════════════
    基本點計算
-   閒家基本點 = fu × 2^(han+2)，超過 7700 時依等級取固定值（上限 8000）
-   莊家基本點 = 閒家基本點 × 1.5（小數無條件進位至整數）
+   閒家基本點 = fu × 2^(han+2)，超過 7700 時依等級取固定值
+   基本點計算完後無條件進位到 100 的倍數
    等級對照：
-     滿貫   (Mangan)    : 閒家 8000   / 莊家 12000
-     跳滿   (Haneman)   : 閒家 12000  / 莊家 18000
-     倍滿   (Baiman)    : 閒家 16000  / 莊家 24000
-     三倍滿 (Sanbaiman) : 閒家 24000  / 莊家 36000
-     役滿   (Yakuman)   : 閒家 32000  / 莊家 48000
+     滿貫   (Mangan)    : 基本點 8000
+     跳滿   (Haneman)   : 基本點 12000
+     倍滿   (Baiman)    : 基本點 16000
+     三倍滿 (Sanbaiman) : 基本點 24000
+     役滿   (Yakuman)   : 基本點 32000
+
+   實際支付（已含進位到100）：
+     閒家榮和  → 點炮者支付 basic_pts × 4
+     閒家自摸  → 莊家支付 dealer_basic_pts × 2，兩閒家各支付 basic_pts × 2（原基本點，非dealer）
+                 ※ 此處 dealer_basic_pts = basic_pts × 1.5（進位100）
+     莊家榮和  → 點炮者支付 dealer_basic_pts × 6
+     莊家自摸  → 三閒家各支付 dealer_basic_pts × 2
 ══════════════════════════════════════════════════════════════ */
 static void sc__calc_basic_pts(ScoreResult* s) {
     s->limit_name[0] = '\0';
 
     if (s->is_yakuman) {
-        s->basic_pts        = 32000;
-        s->dealer_basic_pts = 48000;
+        s->basic_pts        = 8000;   /* 役滿閒家基本點(×4=32000) */
+        s->dealer_basic_pts = 16000;  /* 役滿莊家基本點(×2×3=48000/自摸×2×3) */
+        /* 直接用固定支付值，不再走下面公式，統一在 score_print 顯示 */
         strcpy(s->limit_name, "Yakuman");
         return;
     }
 
     int han = s->han;
     int fu  = s->fu;
+    int raw;
 
-    /* 先依番數判斷是否直接進入固定等級 */
+    /* 依番數判斷等級 */
     if (han >= 13) {
-        s->basic_pts = 32000; strcpy(s->limit_name, "Kazoe Yakuman");
+        raw = 8000; strcpy(s->limit_name, "Kazoe Yakuman");
     } else if (han >= 11) {
-        s->basic_pts = 24000; strcpy(s->limit_name, "Sanbaiman");
+        raw = 6000; strcpy(s->limit_name, "Sanbaiman");
     } else if (han >= 8) {
-        s->basic_pts = 16000; strcpy(s->limit_name, "Baiman");
+        raw = 4000; strcpy(s->limit_name, "Baiman");
     } else if (han >= 6) {
-        s->basic_pts = 12000; strcpy(s->limit_name, "Haneman");
+        raw = 3000; strcpy(s->limit_name, "Haneman");
     } else {
         /* 一般計算：fu × 2^(han+2) */
         int pts = fu;
         for (int i = 0; i < han + 2; i++) pts *= 2;
 
-        /* 滿貫判定：超過 7700 或符合特定組合 */
         int is_mangan = (pts > 7700)
             || (han == 5)
             || (han == 4 && fu >= 30)
             || (han == 3 && fu >= 70);
 
         if (is_mangan) {
-            s->basic_pts = 8000;
-            strcpy(s->limit_name, "Mangan");
+            raw = 2000; strcpy(s->limit_name, "Mangan");
         } else {
-            s->basic_pts = pts;
+            raw = pts;
         }
     }
 
-    /* 莊家基本點 = 閒家 × 1.5，無條件進位 */
-    s->dealer_basic_pts = (s->basic_pts * 3 + 1) / 2;
+    /* 存放原始基本點（未進位），支付時再乘倍數後進位 */
+    s->basic_pts        = raw;
+    s->dealer_basic_pts = raw * 3 / 2;
 }
 
 /* ══════════════════════════════════════════════════════════════
-   輔助：印出計算結果
+   輔助：印出計算結果（顯示實際支付點數）
 ══════════════════════════════════════════════════════════════ */
 static void score_print(const ScoreResult* s) {
+    /* ── 符番行 ── */
     if (s->is_yakuman) {
         printf("   [YAKUMAN] %s\n", s->yakuman_name);
-        printf("   Basic pts: %d (dealer: %d)\n",
-               s->basic_pts, s->dealer_basic_pts);
-        return;
+    } else {
+        printf("   Fu: %d  Han: %d", s->fu, s->han);
+        if (s->limit_name[0]) printf("  (%s)", s->limit_name);
+        printf("\n");
     }
-    printf("   Fu: %d  Han: %d", s->fu, s->han);
-    if (s->limit_name[0]) printf("  (%s)", s->limit_name);
-    printf("\n");
-    printf("   Basic pts: %d (dealer: %d)\n",
-           s->basic_pts, s->dealer_basic_pts);
+
+    /* ── 役種清單 ── */
     for (int i = 0; i < s->n_yaku; i++)
         printf("       + %s (%d han)\n", s->yaku[i].name, s->yaku[i].han);
+
+    /* ── 實際支付點數 ── */
+    int bp  = s->basic_pts;
+    int dbp = s->dealer_basic_pts;
+
+    if (s->is_dealer) {
+        if (s->is_tsumo) {
+            /* 莊家自摸：各閒家付 ceil100(raw × 1.5 × 2) = ceil100(dbp × 2) */
+            int each = sc__ceil100(dbp * 2);
+            printf("   Payment (dealer tsumo) : each player pays %d  [total: %d]\n",
+                   each, each * 3);
+        } else {
+            /* 莊家榮和：點炮者付 ceil100(raw × 6) = ceil100(bp × 6) */
+            printf("   Payment (dealer ron)   : discarder pays %d\n",
+                   sc__ceil100(bp * 6));
+        }
+    } else {
+        if (s->is_tsumo) {
+            int dealer_pay    = sc__ceil100(dbp * 2);
+            int nondealer_pay = sc__ceil100(bp  * 2);
+            printf("   Payment (tsumo)        : dealer pays %d / each non-dealer pays %d  [total: %d]\n",
+                   dealer_pay, nondealer_pay, dealer_pay + nondealer_pay * 2);
+        } else {
+            printf("   Payment (ron)          : discarder pays %d\n",
+                   sc__ceil100(bp * 4));
+        }
+    }
 }
 
 #endif /* SCORE_CALC_H */

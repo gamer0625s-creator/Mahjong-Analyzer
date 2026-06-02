@@ -179,9 +179,9 @@ int main(void) {
     printf("   Japanese Mahjong Hand Analyzer\n");
     printf("===========================================\n");
     printf("Format: Normal tiles (e.g. 3m, 7p, 1z)\n");
-    printf("Melds: c234m (Chi), p5p (Pon), k1z (Minkan), q1z (Ankan\n");
+    printf("Melds: c234m (Chi), p5p (Pon), k1z (Minkan), q1z (Ankan)\n");
     printf("Note: Ankou just enter 3 identical tiles, e.g. 1z 1z 1z\n");
-    printf("Example hand: 1m 2m 3m p4m 5p 6p 7p 1s 1s 1s 7z 7z\n");
+    printf("Example hand: 2p 2p 3p 3p 8p 8p 1s 1s 4s 4s 8s 8s 1z 1z\n");
     printf("-------------------------------------------\n");
     printf("Enter your hand (Space-separated):\n");
 
@@ -373,18 +373,28 @@ int main(void) {
                 score_calc(&h14, &wr, tile, 1, round_wind, seat_wind, dora_indicators, riichi, &sr_tsumo);
 
                 char note[128] = "";
-                if (wr.tanyao)  strncat(note, " Tanyao", sizeof(note)-strlen(note)-1);
+                if (wr.tanyao)  strncat(note, " Tanyao",  sizeof(note)-strlen(note)-1);
                 if (wr.ippeiko) strncat(note, " Ippeiko", sizeof(note)-strlen(note)-1);
 
                 if (sr_ron.is_yakuman) {
                     printf("%s (%d left) [YAKUMAN: %s]",
                            tile_name(tile), rem, sr_ron.yakuman_name);
                 } else {
-                    printf("%s (%d left) [Ron:%dfu%dhan / Tsumo:%dfu%dhan%s]",
-                           tile_name(tile), rem,
-                           sr_ron.fu, sr_ron.han,
-                           sr_tsumo.fu, sr_tsumo.han,
-                           note);
+                    int is_dealer = (seat_wind == 0);
+                    int ron_pay          = ((sr_ron.basic_pts        * 4 + 99) / 100) * 100;
+                    int tsumo_dealer     = ((sr_tsumo.dealer_basic_pts * 2 + 99) / 100) * 100;
+                    int tsumo_nondealer  = ((sr_tsumo.basic_pts        * 2 + 99) / 100) * 100;
+
+                    if (is_dealer) {
+                        int d_ron  = ((sr_ron.basic_pts          * 6 + 99) / 100) * 100;
+                        int d_tsum = ((sr_tsumo.dealer_basic_pts * 2 + 99) / 100) * 100;
+                        printf("%s (%d left) [Ron:%d / Tsumo:each %d%s]",
+                               tile_name(tile), rem, d_ron, d_tsum, note);
+                    } else {
+                        printf("%s (%d left) [Ron:%d / Tsumo:d%d+%d×2%s]",
+                               tile_name(tile), rem,
+                               ron_pay, tsumo_dealer, tsumo_nondealer, note);
+                    }
                 }
                 if (j < opt->n_waits - 1) printf(",\n          ");
             }
