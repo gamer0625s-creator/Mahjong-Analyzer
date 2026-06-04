@@ -85,10 +85,10 @@ static int sc__meld_fu(MeldType type, int tile, int is_open_pon_from_closed) {
     /* 是否么九 */  
     int yao = sc__is_yaochuuhai(tile);
     switch (type) {
-        case MELD_CHI:       return 0;
-        case MELD_PON:       return yao ? 4 : 2;   /* 明刻 */
-        case MELD_KAN_OPEN:  return yao ? 16 : 8;  /* 明槓 */
-        case MELD_KAN_CLOSED:return yao ? 32 : 16;  /* 暗槓 */
+        case MELD_CHI:       if(DEBUG)printf("CHI Bug\n");return 0;
+        case MELD_PON:       if(DEBUG)printf("PON Bug\n");return yao ? 4 : 2;   /* 明刻 */
+        case MELD_KAN_OPEN:  if(DEBUG)printf("KAN Bug\n");return yao ? 16 : 8;  /* 明槓 */
+        case MELD_KAN_CLOSED:if(DEBUG)printf("ANKAN Bug\n");return yao ? 32 : 16;  /* 暗槓 */
         default:             return 0;
     }
     (void)is_open_pon_from_closed;
@@ -96,6 +96,7 @@ static int sc__meld_fu(MeldType type, int tile, int is_open_pon_from_closed) {
 
 /* 暗刻加符（手牌中的刻子） */
 static int sc__ankou_fu(int tile) {
+    if(DEBUG)printf("ANPON Bug \n");
     return sc__is_yaochuuhai(tile) ? 8 : 4;   /* 暗刻 */ 
 }
 
@@ -500,6 +501,7 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
         /* 門前清榮和 */
         if (is_menzen && !is_tsumo) fu += 10;
 
+
         /* 自摸（平和自摸不加自摸符） */
         int pinfu = sc__is_pinfu(d, ph, win_tile, round_wind, seat_wind);
         if (is_tsumo && !pinfu) fu += 2;
@@ -507,8 +509,10 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
         /* 聽牌符 */
         if (win_tile >= 0 && !pinfu)
             fu += sc__wait_fu(d, ph->melds, ph->num_melds, win_tile);
+           
         /* 雀頭符 */
         fu += sc__pair_fu(d->pair_tile, round_wind, seat_wind);
+       
         /* 手牌面子符 */
         for (int m = 0; m < d->n_mentsu; m++) {
             int t = d->mentsu_tile[m];
@@ -516,20 +520,23 @@ static void score_calc(const PlayerHand* ph, const RonResult* ron,
                 /* 順子 0符 */
             } else {
                 fu += sc__ankou_fu(t);
+               
             }
         }
         /* 副露面子符 */
         for (int i = 0; i < ph->num_melds; i++) {
             int t = ph->melds[i].tiles[0];
             fu += sc__meld_fu(ph->melds[i].type, t, 0);
+          
         }
 
         /* 平和自摸固定20符（不進位另加） */
         if (pinfu && is_tsumo) fu = 20;
-    
+        
         /* 進位到10倍數（非平和自摸的情況） */
         if (!(pinfu && is_tsumo)) {
             fu = ((fu + 9) / 10) * 10;
+
         }
         
         /* ── 番計算 ── */
@@ -701,7 +708,7 @@ static void sc__calc_basic_pts(ScoreResult* s) {
 
     /* 存放原始基本點（未進位），支付時再乘倍數後進位 */
     s->basic_pts        = raw;
-    s->dealer_basic_pts = raw * 3 / 2;
+    s->dealer_basic_pts = raw;
 }
 
 /* ══════════════════════════════════════════════════════════════
